@@ -43,22 +43,32 @@ def NodesetTest():
 
 def TransversalTest():
 
-    H = sparse.csr_matrix([
-            [1,1,1,1,0,0,1,0,1],
-            [1,0,0,1,1,0,0,1,0],
-            [0,1,1,0,1,1,0,1,1],
-            [0,1,1,0,0,1,1,1,0],
-        ], dtype='int8')
+    # H = sparse.csr_matrix([
+    #         [1,1,1,1,1,0,0,0,0],
+    #         [1,0,1,1,1,0,0,0,0],
+    #         [0,1,0,1,1,0,0,0,0],
+    #         [0,1,1,0,1,1,1,0,0],
+    #         [0,1,1,1,0,0,0,1,0],
+    #         [0,1,1,0,0,0,0,0,1],
+    #     ], dtype='int8')
+    # W = np.array([1,1,1,1,1,1,1,1,1])
     # H = sparse.csr_matrix([
     #         [1,1,1,1],
     #         [0,1,1,1],
     #         [0,0,1,1],
     #         [0,0,0,1],
     #     ], dtype='int8')
-    W = np.array([1,1,1,1,1,1,1,1,1,])
+    # W = np.array([1,1,1,2])
+    H = sparse.csr_matrix([
+            [1,0],
+            [0,1],
+            [1,1],
+        ], dtype='int8')
+    W = np.array([8,8])
 
     T = Transverer(H, W)
-    T.find_all_transversals()
+    transversals = T.find_all_transversals()
+    print(transversals)
 
 # ===== Sand Box =====
 if __name__ == '__main__':

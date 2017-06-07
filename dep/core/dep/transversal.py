@@ -227,7 +227,7 @@ class Transverer():
                             yield offspring
 
 
-    def compute_vector_contribution(self, nodeset, k, Hk = None, return_node_contributions = False):
+    def compute_vector_contribution(self, nodeset, k, Hk = None):
         if Hk is None:
             Hk = self.H_r[:,:k+1] # TODO Bottleneck
 
@@ -242,21 +242,23 @@ class Transverer():
         # calculate current contribution of nodeset
         total_contributions = sparse.csr_matrix.dot(nodeset_vector, Hk) # TODO is this really efficient?
 
-        if return_node_contributions:
-            node_contribution_dict = {}
-            for n in nodeset:
-                rep = next(iter(n))
-                node_contribution_dict[n] = Hk.indices[Hk.indptr[rep]:Hk.indptr[rep+1]]
-            return nodeset_vector, total_contributions, node_contribution_dict
-        else:
-            return nodeset_vector, total_contributions
+        return nodeset_vector, total_contributions
+
+    def compute_node_contribution_dict(self, nodeset, H):
+        node_contribution_dict = {}
+        for n in nodeset:
+            rep = next(iter(n))
+            node_contribution_dict[n] = H.indices[H.indptr[rep]:H.indptr[rep+1]]
+        return node_contribution_dict
 
     def certify_appropriate_nodes(self, offspring, candidates, k):
 
         Hk = self.H_r[:,:k+1] # TODO Bottleneck
 
-        offspring_vector, offspring_contribution, node_contribution_dict = self.compute_vector_contribution(offspring, k, Hk = Hk, return_node_contributions = True)
+        offspring_vector, offspring_contribution = self.compute_vector_contribution(offspring, k, Hk = Hk)
         adjusted_contribution = offspring_contribution - self.W[:k+1]
+
+        node_contribution_dict = self.compute_node_contribution_dict(nodeset, Hk) # TODO determine this nodeset (needs to include offspring nodes and candidate nodes)
 
         # Huge optimization by caching invalidating nodes
         inappropriate_nodes = []

@@ -58,17 +58,27 @@ def TransversalTest():
     #         [0,0,1,1],
     #         [0,0,0,1],
     #     ], dtype='int8')
-    # W = np.array([1,1,1,2])
+    # W = np.array([1,1,1,1])
+    # H = sparse.csr_matrix([
+    #         [1,0,1,0],
+    #         [0,1,1,0],
+    #         [0,0,1,1],
+    #         [0,1,0,1],
+    #     ], dtype='int8')
+    # W = np.array([2,2,3,1])
     H = sparse.csr_matrix([
             [1,0],
             [0,1],
             [1,1],
         ], dtype='int8')
-    W = np.array([8,8])
+    W = np.array([1,7])
 
     T = Transverer(H, W)
     transversals = T.find_all_transversals()
-    print(transversals)
+
+    print('H', H.toarray())
+    print('W', W)
+    print('transversals', transversals)
 
 # ===== Sand Box =====
 if __name__ == '__main__':

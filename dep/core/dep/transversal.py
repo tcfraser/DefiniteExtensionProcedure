@@ -4,6 +4,7 @@ import numpy as np
 from ..datastructures.sets import *
 from itertools import product
 
+# ===== Some Data Structures =====
 class Nodeset(frozenset):
 
     def __new__(cls, *args, **kwargs):
@@ -24,9 +25,88 @@ class NodesetCounter(Counter):
 
 capture_methods(NodesetCounter, Counter, Foocounter.capture_methods)
 
-def clog(label, data):
-    print('clog :: {:>24} : {:<}'.format(label, str(data)))
+# ===== Enum Node Types =====
+α, β, γ, δ = 0, 1, 2, 3
 
+# ===== Custom Logging Procedures =====
+def clog(label, data):
+    print('clog :: {:>32} : {:<}'.format(label, str(data)))
+
+def clog_types(types):
+    clog("α type", types[α])
+    clog("β type", types[β])
+    clog("γ type", types[γ])
+    clog("δ type", types[δ])
+
+# ===== Main Methods =====
+def compute_node_types(last_nodes, next_edge):
+
+    # Generalized nodes of each type (α,β,γ,δ) where n is a generalized node from last_nodes
+    types = (
+        [], # α type: e does not overlap with n
+        [], # β type: # n contained in e
+        [], # γ type: # (n1, n2) = (n - e, n & e) data structure for pairs in type γ (n and e strictly overlap)
+        [], # δ type: # Any new nodes introduced by the next_edge that were previously unseen
+    )
+
+    δ_remainder = next_edge.copy()
+
+    # n are the generalized nodes
+    # @Efficiency: Could replace next_edge with δ_remainder if need be
+    for n in last_nodes:
+        ne = n & next_edge # intersection of n and e
+
+        if not bool(ne): # the set is empty
+            # α case
+            types[α].append(n)
+        elif n.issubset(next_edge):
+            # β case
+            types[β].append(n)
+            δ_remainder = δ_remainder - n
+        else:
+            # γ case
+            n1 = n - ne
+            n2 = ne
+            δ_remainder = δ_remainder - ne
+            types[γ].append((n1, n2))
+
+    if bool(δ_remainder):
+        types[δ].append(δ_remainder)
+
+    return types
+
+def compute_nodes_from_types(types):
+    nodes = []
+    nodes.extend(types[α])
+    nodes.extend(types[β])
+    nodes.extend(types[δ])
+    unziped = list(zip(*types[γ]))
+    if bool(unziped):
+        nodes.extend(unziped[0])
+        nodes.extend(unziped[1])
+    return nodes
+
+def test_compute_generalized_nodes(H):
+    H = H.tocsc()
+    all_nodes = Nodeset(list(range(H.shape[0])))
+    edge_list = sparse_hypergraph_to_edge_list(H)
+    clog("edge_list", edge_list)
+    # generalized_nodes = [edge_list[0], all_nodes - edge_list[0]]
+    generalized_nodes = [edge_list[0]]
+    clog("generalized_nodes", generalized_nodes)
+    i = 1
+    while i < len(edge_list):
+        generalized_nodes_as_types = compute_node_types(generalized_nodes, edge_list[i])
+        clog_types(generalized_nodes_as_types)
+        generalized_nodes = compute_nodes_from_types(generalized_nodes_as_types)
+        clog("generalized_nodes", generalized_nodes)
+        i += 1
+    clog("Test Complete", None)
+
+def sparse_hypergraph_to_edge_list(H):
+    return [Nodeset(H.indices[H.indptr[c]:H.indptr[c+1]]) for c in range(H.shape[1])]
+
+# ===== Main Class =====
 class Transverer():
 
     def __init__(self, H, W):
@@ -53,50 +133,11 @@ class Transverer():
         assert self.num_edges == len(W), "Length of W {} must equal the number of edges {}".format(len(W), self.num_edges)
         self.W = W
 
-        self.edges = [Nodeset(self.H_c.indices[self.H_c.indptr[c]:self.H_c.indptr[c+1]]) for c in range(self.H_c.shape[1])]
+        self.edges = sparse_hypergraph_to_edge_list(self.H_c)
 
-    def compute_generalized_node_types(gen_nodes_for_last, e):
-
-        # Generalized nodes of each type (α,β,γ,δ) where n is a generalized node from gen_nodes_for_last
-        type_α = NodesetCounter() # e does not overlap with n
-        type_β = NodesetCounter() # n contained in e
-        type_γ = NodesetCounter() # {(n1, n2): 1, ...} data structure for pairs in type γ (n and e strictly overlap)
-        type_δ = NodesetCounter() # Any new nodes introduced by the next_edge that were previously unseen
-
-        δ_remainder = e.copy()
-        generalized_nodes = []
-
-        # n are the generalized nodes
-        for n in gen_nodes_for_last:
-            ne = n & e # intersection of n and e
-
-            if not bool(ne): # the set is empty
-                # α case
-                type_α[n] = 0
-                generalized_nodes.append(n)
-            elif n.issubset(e):
-                # β case
-                type_β[n] = 0
-                generalized_nodes.append(n)
-                δ_remainder = δ_remainder - n
-            else:
-                # γ case
-                n1 = n - ne
-                n2 = ne
-                δ_remainder = δ_remainder - ne
-                type_γ[(n1, n2)] = 0
-                generalized_nodes.append(n1)
-                generalized_nodes.append(n2)
-
-        if bool(δ_remainder):
-            type_δ[δ_remainder] = 0
-            generalized_nodes.append(δ_remainder)
-
-        return ((type_α, type_β, type_γ, type_δ), generalized_nodes)
-
-    def generate_next_hyperedge(self, gen_nodes_for_last, transversal, k):
+    def add_next_hyperedge(self, last_nodes, transversal, k):
         """
-        Given a minimal transversal, the generalized nodes from the (k-1)-th hypergraph, add the k-th edge
+        Given a minimal transversal for Hk, the generalized nodes from the k-th hypergraph, add the (k+1)-th edge
         """
         if k >= self.num_edges:
             # This transversal is minimal and finished
@@ -104,73 +145,41 @@ class Transverer():
             clog('completed', transversal)
             yield transversal
         else:
-            e = self.edges[k] # Upcoming edge
-            w = self.W[k] # Upcoming weight for edge E
+            next_edge = self.edges[k] # Upcoming edge
+            next_edge_weight = self.W[k] # Upcoming weight for edge E
 
             clog('transversal', transversal)
             clog('k', k)
             clog('e', e)
             clog('w', w)
 
-            # Populating the node type counters with meta data
-            (type_αβγδ, generalized_nodes) = Transverer.compute_generalized_node_types(gen_nodes_for_last, e)
-            (type_α, type_β, type_γ, type_δ) = type_αβγδ
+            types = compute_node_types(last_nodes, next_edge)
 
-            for n in type_α:
-                type_α[n] = transversal[n]
+            # Manditory Members  : all of the α and β nodes need to be kept with the same weight
+            # γ Choices          : Must select at least transversal[n1 & n2] total members out of n1 or n2 from γ
+            # Contributing nodes : If total < w, need to consider members from β, δ and γ2, nodes
+            manditory_members = NodesetCounter()
 
-            for n in type_β:
-                type_β[n] = transversal[n]
+            for n in types[α]:
+                manditory_members[n] = transversal[n]
 
-            for n1n2 in type_γ:
-                type_γ[n1n2] = transversal[n1n2[0] | n1n2[1]]
+            for n in types[β]:
+                manditory_members[n] = transversal[n]
 
-            clog('type_α', type_α)
-            clog('type_β', type_β)
-            clog('type_γ', type_γ)
-            clog('type_δ', type_δ)
-            clog('generalized_nodes', generalized_nodes)
+            clog_types(types)
+            clog('manditory_members', manditory_members)
 
-            w_β = sum(type_β.values())
+            w_β = sum(manditory_members[n] for n in types[β])
 
             for next_transversal in self.generate_next_transversal(type_αβγδ, k):
-                yield from self.generate_next_hyperedge(generalized_nodes, next_transversal, k + 1)
+                yield from self.add_next_hyperedge(generalized_nodes, next_transversal, k + 1)
 
-                # if w_β < w:
-                #     # First offspring (T_0) hasn't hit new edge
-                #     # appropriate nodes need to be considered
-                #     if l == 0:
-                #         # candidate appropriate nodes
-                #         cand_appr_nodes = NodesetCounter(X[1] for X in type_γ) # all of the X2's
-                #         if bool(E_r):
-                #             cand_appr_nodes[E_r] = 1
-                #         for offT_appr in self.generate_appropriate_nodes(offT, cand_appr_nodes, k):
-                #             clog('w_β < w, l = 0:', offT_appr)
-                #             yield from self.generate_next_hyperedge(offT_appr, k + 1)
+    def generate_γ_choices(self, γ_types, transversal):
+        # Regarding nodes in γ_types, there will be a γ_choice for every choice
+        # of c = transversal[n1 & n2] elements from (n1, n2) γ_types
 
-                #     else: # l > 0: # Not the first offspring, all offspring are minimal transversals
-                #         clog('w_β < w, l > 0:', offT)
-                #         yield from self.generate_next_hyperedge(offT, k + 1)
-
-    def generate_offspring(self, type_αβγδ, k):
-        w = self.W[k]
-        (type_α, type_β, type_γ, type_δ) = type_αβγδ
-        (w_α, w_β, w_γ, w_δ) = (sum(type_counter.values()) for type_counter in type_αβγδ)
-        n2s = [n[1] for n in type_γ.keys()]
-
-        # Regarding nodes in type_γ, there will be a new offspring
-        # for every choice of c = transversal[n1 & n2] elements from
-        # (n1, n2) type_γ such that the total number of elements
-        # chosen out of the n2's (and possibly δ) is at least w - w_β
-        # (the weight of the new edge that is not already taken care of by the type_β's)
-
-        # All of the next transversals will REQUIRE transversal[n] multiples of n for all n in type_α, type_β
-        offspring_seed = type_α + type_β
-
-        if not bool(type_γ):
-            offspring = offspring_seed.copy()
-            clog('offspring (quick)', offspring)
-            yield offspring, w_β
+        if len(γ_types) == 0:
+            yield {}
         else:
             for selection_set in product(*(range(c + 1) for c in type_γ.values())):
                 # clog('selection_set', selection_set)
@@ -310,7 +319,7 @@ class Transverer():
             # Empty set of generalized nodes is the only minimal transversal of H_0
             starting_transversal = NodesetCounter() # list of generalized nodes
 
-            transversal_generator = self.generate_next_hyperedge([], starting_transversal, 0)
+            transversal_generator = self.add_next_hyperedge([], starting_transversal, 0)
 
             transversals = list(transversal_generator) # TODO more fancy options for finding transversals
             return transversals
